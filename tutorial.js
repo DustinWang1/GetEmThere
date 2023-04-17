@@ -20,10 +20,15 @@ export default class Tutorial extends Phaser.Scene {
   create() {
    this.createInitialObjects();     
    this.createStaticGameObjects();
+   this.setInputs();
   }
 
   update() {
     
+  }
+
+  setInputs() {
+    this.input.on("gameobjectdown", this.onObjectClicked);
   }
 
   createStaticGameObjects() {
@@ -66,6 +71,10 @@ export default class Tutorial extends Phaser.Scene {
     var TypeProperty = object.properties.findIndex((property) => {return property.name === "Type"});
     return object.properties[TypeProperty].value === "Switch";
   }
+
+  onObjectClicked(pointer, gameObject) {
+    gameObject.onClick();
+  }
 }
 
 class God {
@@ -107,10 +116,13 @@ class God {
 }
 
 class Switch extends Phaser.GameObjects.Sprite {
+
   constructor(TiledObject, scene) {
     super(scene, TiledObject.x + (16), TiledObject.y + (16), 'tilesheet', 1);
     this.object = TiledObject;
-    this.setInitialOrientation(TiledObject);
+    this.setInitialOrientation();
+    this.setSwitchOptions();
+    this.setInteractive();
     scene.add.existing(this);
   }
 
@@ -120,6 +132,21 @@ class Switch extends Phaser.GameObjects.Sprite {
 
   getInitialFrameFromTiledObject() {
     var index = this.object.properties.findIndex((property) => {return property.name === "initialFrame"});
+    this.currentSwitchOptionsIndex = 0;
     return this.object.properties[index].value;
+  }
+
+  onClick() {
+    if(this.currentSwitchOptionsIndex === this.switchOptions.length - 1) {
+      this.currentSwitchOptionsIndex = 0;
+      this.setFrame(this.switchOptions[this.currentSwitchOptionsIndex]);
+    } else {
+      this.currentSwitchOptionsIndex += 1;
+      this.setFrame(this.switchOptions[this.currentSwitchOptionsIndex]);
+    }
+  }
+  
+  setSwitchOptions() {
+    this.switchOptions = [4, 1];
   }
 }
