@@ -1,5 +1,3 @@
-
-
 export default class Tutorial extends Phaser.Scene {
 
   constructor() {
@@ -14,13 +12,16 @@ export default class Tutorial extends Phaser.Scene {
     this.load.image('popup', 'Assets/PopupBG.png');
     this.load.image('tiles', 'Assets/PathTiles.png');
     this.load.spritesheet('tilesheet', 'Assets/PathTiles.png',{frameWidth: 32, frameHeight: 32});
+    this.load.spritesheet('BlockPeople', 'Assets/BlockPeople.png', {frameWidth: 32, frameHeight: 32});
     this.load.tilemapTiledJSON('map', 'Assets/TutorialMap.tmj');
   }
 
   create() {
    this.createInitialObjects();     
    this.createStaticGameObjects();
+   this.createAnimations();
    this.setInputs();
+   this.testBlock();
   }
 
   update() {
@@ -39,6 +40,36 @@ export default class Tutorial extends Phaser.Scene {
   createInitialObjects() {
     this.createBackground();
     this.createBGM();
+  }
+
+  createAnimations() {
+    this.anims.create({
+      key: 'RedBlock',
+      frameRate: 1,
+      frames: this.anims.generateFrameNumbers('BlockPeople', {start:0, end:2}),
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'BlueBlock',
+      frameRate: 1,
+      frames: this.anims.generateFrameNumbers('BlockPeople', {start:3, end:5}),
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'GreenBlock',
+      frameRate: 1,
+      frames: this.anims.generateFrameNumbers('BlockPeople', {start:6, end:8}),
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'YellowBlock',
+      frameRate: 1,
+      frames: this.anims.generateFrameNumbers('BlockPeople', {start:9, end:11}),
+      repeat: -1
+    });
   }
 
   createBackground() {
@@ -74,6 +105,11 @@ export default class Tutorial extends Phaser.Scene {
 
   onObjectClicked(pointer, gameObject) {
     gameObject.onClick();
+  }
+
+  testBlock() {
+    //TODO add objectlayer("Objects").objects as parameter to call
+    //this.block = new Block(this, "Red", );
   }
 }
 
@@ -148,5 +184,62 @@ class Switch extends Phaser.GameObjects.Sprite {
   
   setSwitchOptions() {
     this.switchOptions = [4, 1];
+  }
+}
+
+class Block extends Phaser.GameObjects.PathFollower {
+  followSpeed = 5000;
+  //TODO Change the start and end tiles to objects so that we can access them easily
+  //TODO set the object layer name to just Objects for clarity. Adjust scene.createPath() accordingly.
+  constructor(scene, colorString, objects) {
+    super(scene, 0, 0, new Phaser.Curves.Path(), 'BlockPeople', 0);
+    this.ObjectLayerObjects = objects;
+    this.color = colorString;
+    this.scene = scene;
+    this.setInitialPosition();
+    this.setPath();
+    this.anims.play(this.color+'block');
+    this.setTextureFrame();
+  }
+
+  setInitialPosition() {
+    var startTile = this.getStartTile()
+    this.x = startTile.x;
+    this.y = startTile.y;
+  }
+
+  setFollowedPath(path) {
+    //TODO set duration to length of the path divided by follow speed
+    this.setPath(path, {duration: followSpeed});
+  }
+
+  setTextureFrame() {
+    switch(this.color) {
+      case "Red":
+        this.setFrame(0);
+        break;
+      case "Blue":
+        this.setFrame(3);
+        break;
+      case "Green":
+        this.setFrame(6);
+        break;
+      case "Yellow":
+        this.setFrame(9);
+        break;
+    }
+  }
+
+  getStartTile() {
+    for(var i = 0; i < this.ObjectLayerObjects.length; i++) {
+      if(this.objectIsStartTile(this.ObjectLayerObjects[i])) {
+        return this.ObjectLayerObjects[i];
+      }
+    }
+  }
+
+  objectIsStartTile(object) {
+    var TypeProperty = object.properties.findIndex((property) => {return property.name === "Type"});
+    return object.properties[TypeProperty].value === "Start";
   }
 }
