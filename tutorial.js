@@ -1,5 +1,6 @@
 export default class Tutorial extends Phaser.Scene {
 
+  TileLength = 32;
   constructor() {
     super({key: 'Tutorial'});
   }
@@ -21,11 +22,18 @@ export default class Tutorial extends Phaser.Scene {
    this.createStaticGameObjects();
    this.createAnimations();
    this.setInputs();
-   this.testBlock();
+   this.blocks = this.add.group();
+   this.addBlock();
   }
 
   update() {
-    
+    this.updateBlockPaths();
+  }
+
+  updateBlockPaths() {
+    this.blocks.children.entries.forEach((block) => {
+      block.updatePath(this.map);
+    });
   }
 
   setInputs() {
@@ -34,7 +42,7 @@ export default class Tutorial extends Phaser.Scene {
 
   createStaticGameObjects() {
     this.createGod();
-    this.createPath();
+    this.createTimePath();
   }
 
   createInitialObjects() {
@@ -85,17 +93,12 @@ export default class Tutorial extends Phaser.Scene {
     this.god = new God(this.game.canvas.width/2, this.game.canvas.height/6, this);
   }
 
-  createPath() {
+  createTimePath() {
     this.map = this.make.tilemap({key: 'map'});
     this.tileset = this.map.addTilesetImage('PathTiles', 'tiles');
     this.staticPaths = this.map.createLayer('Static', this.tileset, 0, 32);
     this.switches = this.add.group();
-    this.map.getObjectLayer('Switch').objects.forEach((tempSwitch) => {
-      if(this.tiledObjectIsSwitch(tempSwitch)) {
-        this.switches.add(new Switch(tempSwitch, this)); 
-      }
-    });
-    
+    this.createSwitches()
   }
   
   tiledObjectIsSwitch(object) {
@@ -107,9 +110,16 @@ export default class Tutorial extends Phaser.Scene {
     gameObject.onClick();
   }
 
-  testBlock() {
-    //TODO add objectlayer("Objects").objects as parameter to call
-    //this.block = new Block(this, "Red", );
+  addBlock() {
+    this.blocks.add(new Block(this, "Red", this.map.getObjectLayer('Objects').objects));
+  }
+
+  createSwitches() {
+    this.map.getObjectLayer('Objects').objects.forEach((tempSwitch) => {
+      if(this.tiledObjectIsSwitch(tempSwitch)) {
+        this.switches.add(new Switch(tempSwitch, this)); 
+      }
+    });
   }
 }
 
@@ -189,28 +199,101 @@ class Switch extends Phaser.GameObjects.Sprite {
 
 class Block extends Phaser.GameObjects.PathFollower {
   followSpeed = 5000;
-  //TODO Change the start and end tiles to objects so that we can access them easily
-  //TODO set the object layer name to just Objects for clarity. Adjust scene.createPath() accordingly.
   constructor(scene, colorString, objects) {
     super(scene, 0, 0, new Phaser.Curves.Path(), 'BlockPeople', 0);
     this.ObjectLayerObjects = objects;
     this.color = colorString;
     this.scene = scene;
     this.setInitialPosition();
-    this.setPath();
-    this.anims.play(this.color+'block');
     this.setTextureFrame();
+    scene.add.existing(this);
+    this.anims.play(this.color + "Block");
   }
 
   setInitialPosition() {
     var startTile = this.getStartTile()
-    this.x = startTile.x;
-    this.y = startTile.y;
+    this.x = startTile.x + this.scene.TileLength/2;
+    this.y = startTile.y + this.scene.TileLength/2;
   }
 
-  setFollowedPath(path) {
-    //TODO set duration to length of the path divided by follow speed
-    this.setPath(path, {duration: followSpeed});
+  updatePath(map) {
+    /*
+    if block is on top of switch return
+
+    while (next tile is path or switch) 
+
+      push NextTileLocationToPath;
+      getNextTileLocation();
+      set Next Tile to get Tile at world XY
+    
+    push one more time to follow into circle;
+
+    */
+    if(this.switchAtWorldXY(new Phaser.Math.Vector2(this.x, this.y)) !== false) return;
+    var initialTile = map.getTileAtWorldXY(this.x, this.y);
+    var currentLoc = new Phaser.Math.Vector2(initialTile.x + this.scene.TileLength/2, initialTile.y+this.scene.TileLength/2);
+    var path = [];
+    while(this.isOnPathOrSwitch(currentLoc, map)) {
+        path.push(currentLoc.x, currentLoc.y);
+        currentLoc = this.getNextTileLocation(currentLoc, map);
+    }
+    path.push(currentLoc.x, currentLoc.y);
+    console.log(path);
+    this.setPath(path);
+  }
+
+  isOnPathOrSwitch(currentLoc, map) { 
+    if(map.getTileAtWorldXY(currentLoc.x, currentLoc.y) === null) {
+      return this.switchAtWorldXY(currentLoc) !== false;
+    } else {
+      return true;
+    }
+  }
+
+  switchAtWorldXY(currentLoc) {
+   for(var i = 0; i < this.scene.switches.children.entries.length; i++) {
+    var switchObject = this.scene.switches.children.entries[i];
+    if(currentLoc.x - switchObject.x > 0 && currentLoc.x - switchObject.x < this.scene.TileLength) {
+      if(currentLoc.y - switchObject.y > 0 && currentLoc.y - switchObject.y < this.scene.TileLength) {
+        return switchObject;
+      }
+    }
+   }
+   return false;
+  }
+
+  getNextTileLocation(currentLoc, map) {
+    var switchObject = switchAtWorldXY(currentLoc);
+    var frameOrType;
+    if(switchObject === false) {
+      var tile = map.getTileAtWorldXY(currentLoc.x, currentLoc.y); 
+      var TypePropertyIndex = tile.properties.findIndex((property) => {return property.name === "Type"});
+      frameOrType = tile.properties[TypePropertyIndex].value;
+    } else {
+      frameOrType = switchObject.switchOptions[switchObject.currentSwitchOptionsIndex];
+    }
+    return this.getDeltaPointFollowPath(frameOrType);
+    
+  }
+
+  getDeltaPointFollowPath(tileType) {
+    switch(tileType) {
+      case "Start" || 0:
+        return new Phaser.Math.Vector2(32, 0);
+      case "Horizontal" | 1:
+        return new Phaser.Math.Vector2(32, 0);
+      case "Vertical" || 2:
+        //TODO Check for rotated path
+        return new Phaser.Math.Vector2(0, -32);
+      case "TopRight" || 3:
+        return new Phaser.Math.Vector2(32, 0);
+      case "LeftTop" || 4:
+        return new Phaser.Math.Vector2(0, -32);
+      case "BottomRight" || 5:
+        return new Phaser.Math.Vector2(32, 0);
+      case "LeftBottom" || 6:
+        return new Phaser.Math.Vector2(0, 32);
+    }
   }
 
   setTextureFrame() {
