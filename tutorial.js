@@ -18,26 +18,32 @@ export default class Tutorial extends Phaser.Scene {
   }
 
   create() {
+   this.blocks = this.add.group();
+   this.blockPath = new Phaser.Curves.Path();
    this.createInitialObjects();     
    this.createStaticGameObjects();
    this.createAnimations();
-   this.setInputs();
-   this.blocks = this.add.group();
+   this.setInitialBlockPath();
    this.addBlock();
+   this.setInputs();
   }
 
   update() {
-    this.updateBlockPaths();
   }
 
   updateBlockPaths() {
-    this.blocks.children.entries.forEach((block) => {
-      block.updatePath(this.map);
-    });
+    //algorithm
   }
 
   setInputs() {
     this.input.on("gameobjectdown", this.onObjectClicked);
+    this.input.on("gameobjectdown", this.updateBlockPaths);
+  }
+
+  setInitialBlockPath() {
+    //TODO set to actual algorithm
+    this.initialPath = new Phaser.Curves.Path().splineTo([63.75 + 16, 191.87 + 16, 100+16, 191.87+16]);
+    this.initialPath.curves[0].points.shift();
   }
 
   createStaticGameObjects() {
@@ -107,11 +113,15 @@ export default class Tutorial extends Phaser.Scene {
   }
 
   onObjectClicked(pointer, gameObject) {
-    gameObject.onClick();
+    if(gameObject instanceof Switch) {
+      gameObject.onClick();
+      this.scene.events.emit('switched', this.blockPath);
+    }
+    
   }
 
   addBlock() {
-    this.blocks.add(new Block(this, "Red", this.map.getObjectLayer('Objects').objects));
+    this.blocks.add(new Block(this, this.initialPath,"Red", this.map.getObjectLayer('Objects').objects));
   }
 
   createSwitches() {
@@ -199,8 +209,8 @@ class Switch extends Phaser.GameObjects.Sprite {
 
 class Block extends Phaser.GameObjects.PathFollower {
   followSpeed = 5000;
-  constructor(scene, colorString, objects) {
-    super(scene, 0, 0, new Phaser.Curves.Path(), 'BlockPeople', 0);
+  constructor(scene, path, colorString, objects) {
+    super(scene, path, 0, 0, 'BlockPeople', 0);
     this.ObjectLayerObjects = objects;
     this.color = colorString;
     this.scene = scene;
@@ -208,38 +218,38 @@ class Block extends Phaser.GameObjects.PathFollower {
     this.setTextureFrame();
     scene.add.existing(this);
     this.anims.play(this.color + "Block");
+    scene.events.on('switched', this.handleSwitch);
+    this.startFollow({
+      positionOnPath: true,
+      duration: 5000,
+    });
   }
 
   setInitialPosition() {
     var startTile = this.getStartTile()
     this.x = startTile.x + this.scene.TileLength/2;
     this.y = startTile.y + this.scene.TileLength/2;
+    this.path.startPoint.x = startTile.x + this.scene.TileLength/2;
+    this.path.startPoint.y = startTile.y + this.scene.TileLength/2;
   }
 
   updatePath(map) {
-    /*
-    if block is on top of switch return
-
-    while (next tile is path or switch) 
-
-      push NextTileLocationToPath;
-      getNextTileLocation();
-      set Next Tile to get Tile at world XY
-    
-    push one more time to follow into circle;
-
-    */
+    console.log(this.x, this.y);
     if(this.switchAtWorldXY(new Phaser.Math.Vector2(this.x, this.y)) !== false) return;
     var initialTile = map.getTileAtWorldXY(this.x, this.y);
-    var currentLoc = new Phaser.Math.Vector2(initialTile.x + this.scene.TileLength/2, initialTile.y+this.scene.TileLength/2);
-    var path = [];
+    var currentLoc = new Phaser.Math.Vector2(initialTile.pixelX + 16, initialTile.pixelY + 48);
+    var newPath = [];
     while(this.isOnPathOrSwitch(currentLoc, map)) {
-        path.push(currentLoc.x, currentLoc.y);
+        newPath.push(new Phaser.Math.Vector2(currentLoc.x, currentLoc.y));
         currentLoc = this.getNextTileLocation(currentLoc, map);
     }
-    path.push(currentLoc.x, currentLoc.y);
-    console.log(path);
-    this.setPath(path);
+    newPath.push(new Phaser.Math.Vector2(currentLoc.x, currentLoc.y));
+    var p = new Phaser.Curves.Path().splineTo(newPath)
+    p.curves[0].points.shift();
+    for(var i = 0; i < newPath.length; i++) {
+      this.scene.add.circle(newPath[i].x, newPath[i].y, 2, '0xff0000');
+    }
+    this.setPath(p);
   }
 
   isOnPathOrSwitch(currentLoc, map) { 
@@ -253,8 +263,8 @@ class Block extends Phaser.GameObjects.PathFollower {
   switchAtWorldXY(currentLoc) {
    for(var i = 0; i < this.scene.switches.children.entries.length; i++) {
     var switchObject = this.scene.switches.children.entries[i];
-    if(currentLoc.x - switchObject.x > 0 && currentLoc.x - switchObject.x < this.scene.TileLength) {
-      if(currentLoc.y - switchObject.y > 0 && currentLoc.y - switchObject.y < this.scene.TileLength) {
+    if(currentLoc.x - switchObject.x > -16 && currentLoc.x - switchObject.x < 16) {
+      if(currentLoc.y - switchObject.y > -16 && currentLoc.y - switchObject.y < 16) {
         return switchObject;
       }
     }
@@ -263,35 +273,41 @@ class Block extends Phaser.GameObjects.PathFollower {
   }
 
   getNextTileLocation(currentLoc, map) {
-    var switchObject = switchAtWorldXY(currentLoc);
+    var switchObject = this.switchAtWorldXY(currentLoc);
     var frameOrType;
     if(switchObject === false) {
       var tile = map.getTileAtWorldXY(currentLoc.x, currentLoc.y); 
-      var TypePropertyIndex = tile.properties.findIndex((property) => {return property.name === "Type"});
-      frameOrType = tile.properties[TypePropertyIndex].value;
+      frameOrType = tile.properties.Type;
     } else {
       frameOrType = switchObject.switchOptions[switchObject.currentSwitchOptionsIndex];
     }
-    return this.getDeltaPointFollowPath(frameOrType);
-    
+    var delta = this.getDeltaPointFollowPath(frameOrType);
+    return new Phaser.Math.Vector2(currentLoc.x + delta.x, currentLoc.y + delta.y);
   }
 
   getDeltaPointFollowPath(tileType) {
     switch(tileType) {
-      case "Start" || 0:
+      case "Start":
+      case 0:
         return new Phaser.Math.Vector2(32, 0);
-      case "Horizontal" | 1:
+      case "Horizontal":
+      case 1:
         return new Phaser.Math.Vector2(32, 0);
-      case "Vertical" || 2:
+      case "Vertical":
+      case 2:
         //TODO Check for rotated path
         return new Phaser.Math.Vector2(0, -32);
-      case "TopRight" || 3:
+      case "TopRight":
+      case 3:
         return new Phaser.Math.Vector2(32, 0);
-      case "LeftTop" || 4:
+      case "LeftTop":
+      case 4:
         return new Phaser.Math.Vector2(0, -32);
-      case "BottomRight" || 5:
+      case "BottomRight":
+      case 5:
         return new Phaser.Math.Vector2(32, 0);
-      case "LeftBottom" || 6:
+      case "LeftBottom":
+      case 6:
         return new Phaser.Math.Vector2(0, 32);
     }
   }
@@ -319,6 +335,15 @@ class Block extends Phaser.GameObjects.PathFollower {
         return this.ObjectLayerObjects[i];
       }
     }
+  }
+
+  handleSwitch(path) {
+    //Decide whether or not to update path based on position in path
+    console.log('event received');
+  }
+
+  updateSwitch(path) {
+    //update based on path
   }
 
   objectIsStartTile(object) {
